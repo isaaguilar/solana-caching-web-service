@@ -8,9 +8,9 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::{FmtSubscriber, EnvFilter};
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-const BUF_SIZE: usize = 10;
+const BUF_SIZE: usize = 1000;
 
 struct AppState {
     client: RpcClient,
@@ -279,13 +279,20 @@ mod tests {
         assert_eq!(*cached, expected);
         drop(cached);
 
-        // Calling it two more times will wrap back to index 0 effectivly
-        // overwriting old entries
+        // Call it when so it wraps around to the 0 index again overwriting old entries
+        let mut last_updated_index = state.last_updated_index.write().await;
+        *last_updated_index = BUF_SIZE - 1;
+        drop(last_updated_index);
         let _ = state.cache_sync_latest().await.unwrap();
         let _ = state.cache_sync_latest().await.unwrap();
         let cached = state.cached.read().await;
 
-        let expected = [2, 3, 3, 1, 2, 3, 1, 2, 3, 1];
+        let expected = {
+            let mut arr = [0; BUF_SIZE];
+            arr[BUF_SIZE - 1] = 1;
+            arr[..6].copy_from_slice(&[2, 3, 1, 2, 3, 3]);
+            arr
+        };
 
         assert_eq!(*cached, expected);
         drop(cached);
