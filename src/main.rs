@@ -7,8 +7,8 @@ use axum::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{Level, debug, error, info, warn};
-use tracing_subscriber::FmtSubscriber;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
 const BUF_SIZE: usize = 10;
 
@@ -146,21 +146,27 @@ fn init() {
         .to_lowercase();
 
     if !["none"].contains(&log_level.as_str()) || !log_level.is_empty() {
-        let level = if ["-1", "error"].contains(&log_level.as_str()) {
-            Level::ERROR
+        let directive = if ["-1", "error"].contains(&log_level.as_str()) {
+            "error"
         } else if ["0", "warn", "warning"].contains(&log_level.as_str()) {
-            Level::WARN
+            "warn"
         } else if ["1", "info", "default"].contains(&log_level.as_str()) {
-            Level::INFO
+            "solana_caching_web_service=info"
         } else if ["2", "debug"].contains(&log_level.as_str()) {
-            Level::DEBUG
+            "solana_caching_web_service=debug"
         } else if ["3", "trace", "tracing"].contains(&log_level.as_str()) {
-            Level::TRACE
+            "solana_caching_web_service=trace"
+        } else if ["4"].contains(&log_level.as_str()) {
+            "debug"
+        } else if ["5"].contains(&log_level.as_str()) {
+            "trace"
         } else {
-            Level::INFO
+            "solana_caching_web_service=info"
         };
 
-        let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+        let subscriber = FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::new(directive))
+            .finish();
         tracing::subscriber::set_global_default(subscriber)
             .expect("setting default subscriber failed");
     }
