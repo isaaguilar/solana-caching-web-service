@@ -12,10 +12,53 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 const BUF_SIZE: usize = 1000;
 
+trait Metrics {
+    /// Record time elapsed for fetching blocks using `getBlocks`.
+    async fn record_get_blocks_elapsed(&self);
+    /// Record time elapsed for processing a `isSlotConfirmed` request.
+    async fn record_is_slot_confirmed_elapsed(&self);
+}
+
 struct AppState {
     client: RpcClient,
     cached: RwLock<[u64; BUF_SIZE]>,
     last_updated_index: RwLock<usize>,
+    get_block_last_query: RwLock<std::time::SystemTime>,
+    get_blocks_elapsed: RwLock<std::time::Duration>,
+    is_slot_confirmed_last_query: RwLock<std::time::SystemTime>,
+    is_slot_confirmed_elapsed: RwLock<std::time::Duration>,
+}
+
+impl Metrics for AppState {
+    async fn record_get_blocks_elapsed(&self) {
+        let mut get_block_last_query = self.get_block_last_query.write().await;
+        let mut get_blocks_elapsed = self.get_blocks_elapsed.write().await;
+
+        match &get_block_last_query.elapsed() {
+            Ok(d) => *get_blocks_elapsed = *d,
+            Err(e) => {
+                error!("Could not update get_blocks_elapsed: {e}");
+            }
+        }
+
+        *get_block_last_query = std::time::SystemTime::now();
+        debug!(?get_block_last_query);
+    }
+
+    async fn record_is_slot_confirmed_elapsed(&self) {
+        let mut is_slot_confirmed_last_query = self.is_slot_confirmed_last_query.write().await;
+        let mut is_slot_confirmed_elapsed = self.is_slot_confirmed_elapsed.write().await;
+
+        match &is_slot_confirmed_last_query.elapsed() {
+            Ok(d) => *is_slot_confirmed_elapsed = *d,
+            Err(e) => {
+                error!("Could not update is_slot_confirmed_elapsed: {e}");
+            }
+        }
+
+        *is_slot_confirmed_last_query = std::time::SystemTime::now();
+        debug!(?is_slot_confirmed_last_query);
+    }
 }
 
 impl AppState {
@@ -60,6 +103,7 @@ impl AppState {
         let blocks = self
             .get_confirmed_blocks_between_slots(start_slot, Some(current_slot))
             .await?;
+        self.record_get_blocks_elapsed().await;
 
         drop(last_updated_index);
         drop(write_cache);
@@ -107,6 +151,7 @@ async fn get_is_slot_confirmed(
     State(state): State<Arc<AppState>>,
 ) -> Result<(StatusCode, String), (StatusCode, String)> {
     let state = Arc::clone(&state);
+    state.record_is_slot_confirmed_elapsed().await;
 
     // Get cache to check
     let ro_cached = state.cached.read().await;
@@ -123,7 +168,7 @@ async fn get_is_slot_confirmed(
                 error!("{}", message);
                 (StatusCode::NOT_ACCEPTABLE, message)
             })?;
-
+        state.record_get_blocks_elapsed().await;
         if blocks.len() > 0 {
             // TODO Should cache, but since this block could be far back enough that
             //      would cause the next sync to fail due to too many blocks
@@ -188,6 +233,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client: RpcClient::new(syndica_api_url),
         cached: RwLock::new([0; BUF_SIZE]),
         last_updated_index: RwLock::new(0),
+        get_block_last_query: RwLock::new(std::time::SystemTime::now()),
+        get_blocks_elapsed: RwLock::new(std::time::Duration::default()),
+        is_slot_confirmed_last_query: RwLock::new(std::time::SystemTime::now()),
+        is_slot_confirmed_elapsed: RwLock::new(std::time::Duration::default()),
     });
 
     let cache_state = Arc::clone(&state);
@@ -217,6 +266,10 @@ mod tests {
             client: mock_client,
             cached: RwLock::new([0; BUF_SIZE]),
             last_updated_index: RwLock::new(0),
+            get_block_last_query: RwLock::new(std::time::SystemTime::now()),
+            get_blocks_elapsed: RwLock::new(std::time::Duration::default()),
+            is_slot_confirmed_last_query: RwLock::new(std::time::SystemTime::now()),
+            is_slot_confirmed_elapsed: RwLock::new(std::time::Duration::default()),
         };
 
         let slot = state.get_current_slot().await.unwrap();
@@ -232,6 +285,10 @@ mod tests {
             client: mock_client,
             cached: RwLock::new([0; BUF_SIZE]),
             last_updated_index: RwLock::new(0),
+            get_block_last_query: RwLock::new(std::time::SystemTime::now()),
+            get_blocks_elapsed: RwLock::new(std::time::Duration::default()),
+            is_slot_confirmed_last_query: RwLock::new(std::time::SystemTime::now()),
+            is_slot_confirmed_elapsed: RwLock::new(std::time::Duration::default()),
         };
 
         let blocks = state
@@ -250,6 +307,10 @@ mod tests {
             client: mock_client,
             cached: RwLock::new([0; BUF_SIZE]),
             last_updated_index: RwLock::new(0),
+            get_block_last_query: RwLock::new(std::time::SystemTime::now()),
+            get_blocks_elapsed: RwLock::new(std::time::Duration::default()),
+            is_slot_confirmed_last_query: RwLock::new(std::time::SystemTime::now()),
+            is_slot_confirmed_elapsed: RwLock::new(std::time::Duration::default()),
         };
 
         let _ = state.cache_sync_latest().await.unwrap();
