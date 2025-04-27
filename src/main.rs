@@ -198,3 +198,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_current_slot() {
+        let mock_client = RpcClient::new_mock("succeeds".to_string());
+
+        let state = AppState {
+            client: mock_client,
+            cached: RwLock::new([0; BUF_SIZE]),
+            last_updated_index: RwLock::new(0),
+        };
+
+        let slot = state.get_current_slot().await.unwrap();
+
+        assert_eq!(slot, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_confirmed_blocks_between_slots() {
+        let mock_client = RpcClient::new_mock("succeeds".to_string());
+
+        let state = AppState {
+            client: mock_client,
+            cached: RwLock::new([0; BUF_SIZE]),
+            last_updated_index: RwLock::new(0),
+        };
+
+        let blocks = state
+            .get_confirmed_blocks_between_slots(1, Some(3))
+            .await
+            .unwrap();
+
+        assert_eq!(blocks, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_cache_sync_latest() {
+        let mock_client = RpcClient::new_mock("succeeds".to_string());
+
+        let state = AppState {
+            client: mock_client,
+            cached: RwLock::new([0; BUF_SIZE]),
+            last_updated_index: RwLock::new(0),
+        };
+
+        let _ = state.cache_sync_latest().await.unwrap();
+        let cached = state.cached.read().await;
+
+        let expected = {
+            let mut arr = [0; BUF_SIZE];
+            arr[..3].copy_from_slice(&[1, 2, 3]);
+            arr
+        };
+
+        assert_eq!(*cached, expected);
+        drop(cached);
+
+        // If called again, it should append the results to the cache
+        // and in the case of mock, this will repeat the mock returned
+        // value of get_blocks of 1,2,3
+        let _ = state.cache_sync_latest().await.unwrap();
+        let cached = state.cached.read().await;
+
+        let expected = {
+            let mut arr = [0; BUF_SIZE];
+            arr[..6].copy_from_slice(&[1, 2, 3, 1, 2, 3]);
+            arr
+        };
+
+        assert_eq!(*cached, expected);
+        drop(cached);
+
+        // Calling it two more times will wrap back to index 0 effectivly
+        // overwriting old entries
+        let _ = state.cache_sync_latest().await.unwrap();
+        let _ = state.cache_sync_latest().await.unwrap();
+        let cached = state.cached.read().await;
+
+        let expected = [2, 3, 3, 1, 2, 3, 1, 2, 3, 1];
+
+        assert_eq!(*cached, expected);
+        drop(cached);
+    }
+}
