@@ -1,0 +1,30 @@
+name: Rust
+
+on:
+  push:
+    tags: 
+    - "gha-*" 
+  
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Extract Version from Tag
+      run: |
+        TAG=${GITHUB_REF#refs/tags/}
+        VERSION=${TAG#gha-}  
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Print the version
+      run: echo "VERSION=${{ env.VERSION }}"
+    
+    - name: Run tests
+      run: cargo test --verbose
