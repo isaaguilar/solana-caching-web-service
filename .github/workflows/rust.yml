@@ -24,5 +24,5 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_ENV
 
     - name: Print the version
-      run: echo "VERSION=${{ env.VERSION }}"
+      run: echo "checking... VERSION=${{ env.VERSION }}"
     
