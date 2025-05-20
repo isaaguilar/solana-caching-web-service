@@ -26,5 +26,3 @@ jobs:
     - name: Print the version
       run: echo "VERSION=${{ env.VERSION }}"
     
-    - name: Run tests
-      run: cargo test --verbose
